@@ -117,6 +117,33 @@ export class GameSaveRepository {
 	}
 
 	/**
+	 * 若当前存储目录内文件数超过 maxCount，则按修改时间删除最早的文件，保留最多 maxCount 个
+	 * @param maxCount 允许保留的最大文件数
+	 */
+	async pruneOldFilesIfExceed(maxCount: number): Promise<void> {
+		await this.ensureUploadDirExists();
+		const entries = await fs.readdir(this.uploadDir, { withFileTypes: true });
+		const files = entries.filter((e) => e.isFile()).map((e) => ({ name: e.name, path: path.join(this.uploadDir, e.name) }));
+		if (files.length <= maxCount) return;
+		const withStat = await Promise.all(
+			files.map(async (f) => {
+				const stat = await fs.stat(f.path);
+				return { ...f, mtimeMs: stat.mtimeMs };
+			}),
+		);
+		withStat.sort((a, b) => a.mtimeMs - b.mtimeMs);
+		const toRemove = withStat.slice(0, withStat.length - maxCount);
+		for (const f of toRemove) {
+			try {
+				await fs.unlink(f.path);
+			} catch (err) {
+				// 记录但继续删除其余
+				console.error(`[GameSaveRepository] Failed to prune ${f.path}:`, err);
+			}
+		}
+	}
+
+	/**
 	 * 根据文件名查找文件路径
 	 * @param filename 文件名（如 "xxx.zip"）
 	 * @returns 文件的完整路径，如果文件不存在则返回 null

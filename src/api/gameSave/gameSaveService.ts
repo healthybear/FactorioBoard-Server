@@ -45,6 +45,9 @@ export class GameSaveService {
 			// 保存文件
 			const { filename, path: filePath, originalName } = await this.gameSaveRepository.saveFileAsync(file);
 
+			// 若存储目录超过 5 个文件，删除最早的文件
+			await this.gameSaveRepository.pruneOldFilesIfExceed(5);
+
 			const gameSaveUploadResponse: GameSaveUploadResponse = {
 				filename,
 				originalName,
