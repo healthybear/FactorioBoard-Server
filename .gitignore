@@ -37,5 +37,5 @@ Desktop.ini
 tmp/
 temp/
 
-# 上传文件
-uploads/
+# 游戏存档文件
+game-saves/
