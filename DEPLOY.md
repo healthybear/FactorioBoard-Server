@@ -121,24 +121,48 @@ docker compose up -d
 
 ## 前端与 Nginx 反向代理（可选）
 
-若通过 Nginx 暴露 API：
+若通过 Nginx 暴露 API，可参考以下配置（监听 8089，后端为 localhost:3001）：
 
 ```nginx
 server {
-    listen 80;
-    server_name api.你的域名.com;
+    listen 8089;
+    server_name 你的服务器IP或域名;
 
-    location / {
-        proxy_pass http://127.0.0.1:3000;
+    # Swagger
+    location /api-docs {
+        proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 200M;   # 上传 200MB 存档
     }
+
+    # 个人后端
+    location / {
+        proxy_pass http://localhost:3001;  # 指向 express 服务器
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;  # WebSocket 支持
+        proxy_set_header Connection "upgrade";
+    }
+
+    # 静态资源缓存设置（按需启用）
+    # location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+    #     expires 30d;
+    #     add_header Cache-Control "public, max-age=2592000";
+    # }
 }
 ```
+
+说明：
+
+- **端口**：对外 8089，后端 Express 监听 3001，部署时需将应用 `PORT` 设为 3001。
+- **Swagger**：`/api-docs` 单独 location，与主接口共用同一后端。
+- **WebSocket**：`Upgrade` / `Connection` 头用于 WebSocket 代理。
 
 配置 HTTPS 可用 Let's Encrypt（certbot）等。
 
@@ -159,4 +183,15 @@ curl http://localhost:3000/health-check
 - 本地：<http://localhost:3000/api-docs>
 - 服务器：`http://你的服务器IP或域名:3000/api-docs`
 
-例如服务器 IP 为 `192.168.1.100`、端口为 `3000`，则访问：**http://192.168.1.100:3000/api-docs**。若前面有 Nginx 反向代理并绑定了域名，则用：**https://api.你的域名.com/api-docs**。
+例如服务器 IP 为 `192.168.1.100`、端口为 `3000`，则访问：**http://192.168.1.100:3000/api-docs**。若使用上文 Nginx 配置（监听 8089），则访问：**http://你的服务器IP或域名:8089/api-docs**（建议先试**无**尾部斜杠的地址）。若前面有 Nginx 反向代理并绑定了域名，则用：**https://api.你的域名.com/api-docs**。
+
+### 若 /api-docs 访问不到、没数据返回
+
+1. **先试无尾部斜杠**：访问 `http://你的服务器IP或域名:8089/api-docs`（不要用 `/api-docs/`）。
+2. **在服务器上确认后端正常**：
+   ```bash
+   curl -I http://127.0.0.1:3001/api-docs
+   curl -I http://127.0.0.1:3001/api-docs/swagger.json
+   ```
+   若这里就无响应或非 200，说明应用未监听 3001 或未启动，需检查 `PORT=3001` 和 PM2/Docker。
+3. **确认 Nginx 把 /api-docs 及子路径都转给后端**：`location /api-docs` 会匹配 `/api-docs`、`/api-docs/`、`/api-docs/swagger.json` 等，且 `proxy_pass` 后不要加尾部斜杠（保持 `http://localhost:3001`），否则路径会被改写，Express 收不到 `/api-docs` 前缀。
